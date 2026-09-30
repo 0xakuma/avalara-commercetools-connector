@@ -40,30 +40,46 @@ export const expectAvaTaxReturn = (taxResponse: TransactionModel) => {
   ).toBeDefined();
 };
 
-// Rates, not amounts: the connector runs the cart in `External` tax mode so
-// commercetools computes the tax itself and can apportion a `totalPrice` cart
-// discount. See the note in `postprocess.get.tax.ts`. There is deliberately no
-// `setCartTotalTax` -- that action only exists in `ExternalAmount`.
+// This cart carries no order-level discount, so the connector stays in
+// `ExternalAmount` and states AvaTax's exact amounts. A cart with
+// `discountOnTotalPrice` takes the `External` branch and sends rates instead --
+// see `postprocess.get.tax.ts` and the `externalTaxRate` fixture below.
 export const actions = {
   actions: [
-    { action: 'changeTaxMode', taxMode: 'External' },
+    { action: 'changeTaxMode', taxMode: 'ExternalAmount' },
     {
-      action: 'setLineItemTaxRate',
+      action: 'setLineItemTaxAmount',
       lineItemId: 'id123',
-      externalTaxRate: { name: 'avaTaxRate', amount: 0.0725, country: 'US' },
-    },
-    {
-      action: 'setCustomLineItemTaxRate',
-      customLineItemId: '641649e5-2337-4871-90ab-164fd3e919b3',
-      externalTaxRate: {
-        name: 'avaTaxRate',
-        amount: 0.0725,
-        country: 'US',
+      externalTaxAmount: {
+        totalGross: { currencyCode: 'USD', centAmount: 70249 },
+        taxRate: { name: 'avaTaxRate', amount: 0.0725, country: 'US' },
       },
     },
     {
-      action: 'setShippingMethodTaxRate',
-      externalTaxRate: { name: 'avaTaxRate', amount: 0.0725, country: 'US' },
+      action: 'setCustomLineItemTaxAmount',
+      customLineItemId: '641649e5-2337-4871-90ab-164fd3e919b3',
+      externalTaxAmount: {
+        totalGross: {
+          currencyCode: 'USD',
+          centAmount: 4505,
+        },
+        taxRate: {
+          name: 'avaTaxRate',
+          amount: 0.0725,
+          country: 'US',
+        },
+      },
+    },
+    {
+      action: 'setShippingMethodTaxAmount',
+      externalTaxAmount: {
+        totalGross: { centAmount: 1073, currencyCode: 'USD' },
+        taxRate: { name: 'avaTaxRate', amount: 0.0725, country: 'US' },
+      },
+    },
+    {
+      action: 'setCartTotalTax',
+      externalTotalGross: { currencyCode: 'USD', centAmount: 71627 },
     },
     {
       action: 'setCustomField',

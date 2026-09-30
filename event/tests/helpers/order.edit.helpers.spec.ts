@@ -50,21 +50,34 @@ describe('order.edit.helpers', () => {
       );
 
       expect(mockCreateOrderEdit).toHaveBeenCalledWith('123', [
-        { action: 'changeTaxMode', taxMode: 'External' },
+        { action: 'changeTaxMode', taxMode: 'ExternalAmount' },
         {
-          action: 'setLineItemTaxRate',
-          externalTaxRate: { amount: 0, country: 'US', name: 'avaTaxRate' },
+          action: 'setLineItemTaxAmount',
+          externalTaxAmount: {
+            taxRate: { amount: 0, country: 'US', name: 'avaTaxRate' },
+            totalGross: { centAmount: 13300, currencyCode: 'USD' },
+          },
           lineItemId: '123',
         },
         {
-          action: 'setCustomLineItemTaxRate',
+          action: 'setCustomLineItemTaxAmount',
           customLineItemId: '641649e5-2337-4871-90ab-164fd3e919b3',
-          externalTaxRate: { amount: 0, country: 'US', name: 'avaTaxRate' },
+          externalTaxAmount: {
+            taxRate: { amount: 0, country: 'US', name: 'avaTaxRate' },
+            totalGross: { centAmount: 5200, currencyCode: 'USD' },
+          },
         },
         {
-          action: 'setShippingMethodTaxRate',
-          externalTaxRate: { amount: 0, country: 'US', name: 'avaTaxRate' },
+          action: 'setShippingMethodTaxAmount',
+          externalTaxAmount: {
+            taxRate: { amount: 0, country: 'US', name: 'avaTaxRate' },
+            totalGross: { centAmount: 1123, currencyCode: 'USD' },
+          },
           shippingKey: undefined,
+        },
+        {
+          action: 'setOrderTotalTax',
+          externalTotalGross: { centAmount: 27600, currencyCode: 'USD' },
         },
       ]);
       expect(mockApplyOrderEdit).toHaveBeenCalledWith(orderEdit);
@@ -91,42 +104,107 @@ describe('order.edit.helpers', () => {
         orderToBeEdited
       );
 
-      // Rates, not amounts, and no `setOrderTotalTax`: the order runs in
-      // `External` tax mode so commercetools computes the totals and can
-      // apportion an order-level discount. See `order.edit.helpers.ts`.
+      // No order-level discount on this order, so the connector stays in
+      // `ExternalAmount` and states AvaTax's exact amounts. The next test covers
+      // the `External` branch. See `order.edit.helpers.ts`.
       expect(actions).toEqual([
         {
           action: 'changeTaxMode',
-          taxMode: 'External',
+          taxMode: 'ExternalAmount',
         },
         {
-          action: 'setLineItemTaxRate',
-          externalTaxRate: {
-            amount: 0,
-            country: 'US',
-            name: 'avaTaxRate',
+          action: 'setLineItemTaxAmount',
+          externalTaxAmount: {
+            taxRate: {
+              amount: 0,
+              country: 'US',
+              name: 'avaTaxRate',
+            },
+            totalGross: {
+              centAmount: 13300,
+              currencyCode: 'USD',
+            },
           },
           lineItemId: '123',
         },
         {
-          action: 'setCustomLineItemTaxRate',
+          action: 'setCustomLineItemTaxAmount',
           customLineItemId: '641649e5-2337-4871-90ab-164fd3e919b3',
-          externalTaxRate: {
-            amount: 0,
-            country: 'US',
-            name: 'avaTaxRate',
+          externalTaxAmount: {
+            taxRate: {
+              amount: 0,
+              country: 'US',
+              name: 'avaTaxRate',
+            },
+            totalGross: {
+              centAmount: 5200,
+              currencyCode: 'USD',
+            },
           },
         },
         {
-          action: 'setShippingMethodTaxRate',
-          externalTaxRate: {
-            amount: 0,
-            country: 'US',
-            name: 'avaTaxRate',
+          action: 'setShippingMethodTaxAmount',
+          externalTaxAmount: {
+            taxRate: {
+              amount: 0,
+              country: 'US',
+              name: 'avaTaxRate',
+            },
+            totalGross: {
+              centAmount: 1123,
+              currencyCode: 'USD',
+            },
           },
           shippingKey: undefined,
         },
+        {
+          action: 'setOrderTotalTax',
+          externalTotalGross: {
+            centAmount: 27600,
+            currencyCode: 'USD',
+          },
+        },
       ]);
+    });
+
+    /*
+    An order-level discount makes commercetools deduct the discount from the
+    gross twice in `ExternalAmount`, and it discards `setOrderTotalTax` while it
+    does so. The connector switches such an order to `External` and sends rates,
+    so commercetools computes the totals and applies the discount once.
+    */
+    it('switches to External and sends rates when the order carries a totalPrice discount', () => {
+      const transactionModel: any = {
+        summary: [{ rate: 0.0725 }],
+        lines: [
+          { itemCode: 'sku123', tax: 10 },
+          { itemCode: '12345678909', tax: 10 },
+          { itemCode: 'Shipping', tax: 10 },
+        ],
+      };
+      const discounted = {
+        ...(order({ orderNumber: '12345', country: 'US' }) as object),
+        discountOnTotalPrice: {
+          discountedAmount: { centAmount: 2550, currencyCode: 'USD' },
+          discountedNetAmount: { centAmount: 2550, currencyCode: 'USD' },
+          discountedGrossAmount: { centAmount: 2367, currencyCode: 'USD' },
+          includedDiscounts: [],
+        },
+      } as unknown as Order;
+
+      const actions = buildOrderEditUpdateActions(transactionModel, discounted);
+      const byAction = (name: string) =>
+        actions.filter((a: { action: string }) => a.action === name);
+
+      expect(byAction('changeTaxMode')[0]).toEqual({
+        action: 'changeTaxMode',
+        taxMode: 'External',
+      });
+      expect(byAction('setLineItemTaxRate')).toHaveLength(1);
+      expect(byAction('setCustomLineItemTaxRate')).toHaveLength(1);
+      expect(byAction('setShippingMethodTaxRate')).toHaveLength(1);
+      expect(byAction('setLineItemTaxAmount')).toHaveLength(0);
+      expect(byAction('setOrderTotalTax')).toHaveLength(0);
     });
   });
 });
