@@ -40,6 +40,10 @@ export const expectAvaTaxReturn = (taxResponse: TransactionModel) => {
   ).toBeDefined();
 };
 
+// This cart carries no order-level discount, so the connector stays in
+// `ExternalAmount` and states AvaTax's exact amounts. A cart with
+// `discountOnTotalPrice` takes the `External` branch and sends rates instead --
+// see `postprocess.get.tax.ts` and the `externalTaxRate` fixture below.
 export const actions = {
   actions: [
     { action: 'changeTaxMode', taxMode: 'ExternalAmount' },

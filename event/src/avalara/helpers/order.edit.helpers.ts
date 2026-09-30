@@ -43,8 +43,18 @@ export function buildOrderEditUpdateActions(
 ): StagedOrderUpdateAction[] {
   const actions = [] as StagedOrderUpdateAction[];
 
-  if (order.taxMode !== 'ExternalAmount') {
-    actions.push({ action: 'changeTaxMode', taxMode: 'ExternalAmount' });
+  /*
+  Mode chosen per order, mirroring `postprocess.get.tax.ts` -- read the long note
+  there. `ExternalAmount` keeps AvaTax authoritative for the exact cent; an order
+  carrying an order-level discount switches to `External` because commercetools
+  deducts such a discount from the gross twice in `ExternalAmount`, and discards
+  `setOrderTotalTax` while it does so.
+  */
+  const hasOrderLevelDiscount = !!order?.discountOnTotalPrice;
+  const taxMode = hasOrderLevelDiscount ? 'External' : 'ExternalAmount';
+
+  if (order.taxMode !== taxMode) {
+    actions.push({ action: 'changeTaxMode', taxMode });
   }
 
   const country = (order?.country || order?.shippingAddress?.country) as string;
@@ -83,21 +93,25 @@ export function buildOrderEditUpdateActions(
 
     totalTax += taxCentAmount;
 
-    actions.push({
-      action: 'setLineItemTaxAmount',
-      lineItemId: item.id,
-      externalTaxAmount: {
-        totalGross: {
-          currencyCode: order?.totalPrice?.currencyCode,
-          centAmount: item?.totalPrice?.centAmount + taxCentAmount,
+    if (hasOrderLevelDiscount) {
+      actions.push({
+        action: 'setLineItemTaxRate',
+        lineItemId: item.id,
+        externalTaxRate: { name: 'avaTaxRate', amount: taxCentAmount ? taxRate : 0, country },
+      });
+    } else {
+      actions.push({
+        action: 'setLineItemTaxAmount',
+        lineItemId: item.id,
+        externalTaxAmount: {
+          totalGross: {
+            currencyCode: order?.totalPrice?.currencyCode,
+            centAmount: item?.totalPrice?.centAmount + taxCentAmount,
+          },
+          taxRate: { name: 'avaTaxRate', amount: taxCentAmount ? taxRate : 0, country },
         },
-        taxRate: {
-          name: 'avaTaxRate',
-          amount: taxCentAmount ? taxRate : 0,
-          country,
-        },
-      },
-    });
+      });
+    }
   }
 
   for (const item of order?.customLineItems || []) {
@@ -106,54 +120,72 @@ export function buildOrderEditUpdateActions(
 
     totalTax += taxCentAmount;
 
-    actions.push({
-      action: 'setCustomLineItemTaxAmount',
-      customLineItemId: item.id,
-      externalTaxAmount: {
-        totalGross: {
-          currencyCode: order?.totalPrice?.currencyCode,
-          centAmount: item?.totalPrice?.centAmount + taxCentAmount,
+    if (hasOrderLevelDiscount) {
+      actions.push({
+        action: 'setCustomLineItemTaxRate',
+        customLineItemId: item.id,
+        externalTaxRate: { name: 'avaTaxRate', amount: taxCentAmount ? taxRate : 0, country },
+      });
+    } else {
+      actions.push({
+        action: 'setCustomLineItemTaxAmount',
+        customLineItemId: item.id,
+        externalTaxAmount: {
+          totalGross: {
+            currencyCode: order?.totalPrice?.currencyCode,
+            centAmount: item?.totalPrice?.centAmount + taxCentAmount,
+          },
+          taxRate: { name: 'avaTaxRate', amount: taxCentAmount ? taxRate : 0, country },
         },
-        taxRate: {
-          name: 'avaTaxRate',
-          amount: taxCentAmount ? taxRate : 0,
-          country,
-        },
-      },
-    });
+      });
+    }
   }
 
   const shipTaxCentAmount =
     lines.find((x: any) => x.itemCode === 'Shipping')?.tax * 100;
+
 
   const shipPrice =
     order?.shippingInfo?.discountedPrice?.value?.centAmount ??
     (order?.shippingInfo?.price?.centAmount as number);
   totalTax += shipTaxCentAmount;
 
-  actions.push({
-    action: 'setShippingMethodTaxAmount',
-    shippingKey: order?.shippingKey,
-    externalTaxAmount: {
-      totalGross: {
-        centAmount: shipPrice + shipTaxCentAmount,
-        currencyCode: order?.totalPrice?.currencyCode,
+  if (hasOrderLevelDiscount) {
+    actions.push({
+      action: 'setShippingMethodTaxRate',
+      shippingKey: order?.shippingKey,
+      externalTaxRate: { name: 'avaTaxRate', amount: shipTaxCentAmount ? taxRate : 0, country },
+    });
+  } else {
+    actions.push({
+      action: 'setShippingMethodTaxAmount',
+      shippingKey: order?.shippingKey,
+      externalTaxAmount: {
+        totalGross: {
+          centAmount: shipPrice + shipTaxCentAmount,
+          currencyCode: order?.totalPrice?.currencyCode,
+        },
+        taxRate: { name: 'avaTaxRate', amount: shipTaxCentAmount ? taxRate : 0, country },
       },
-      taxRate: {
-        name: 'avaTaxRate',
-        amount: shipTaxCentAmount ? taxRate : 0,
-        country,
-      },
-    },
-  });
+    });
+  }
 
-  actions.push({
-    action: 'setOrderTotalTax',
-    externalTotalGross: {
-      currencyCode: order?.totalPrice?.currencyCode,
-      centAmount: order?.totalPrice?.centAmount + totalTax, // minus total order discount gross
-    },
-  });
+  /*
+  `setOrderTotalTax` exists only in `ExternalAmount`, and commercetools ignores
+  it whenever `discountOnTotalPrice` is present -- so it is stated only on the
+  branch where it is both valid and honoured. `order.totalPrice` carries no
+  order-level discount there, which is what makes `totalPrice + totalTax` the
+  whole gross and retires the old `// minus total order discount gross` note.
+  */
+  if (!hasOrderLevelDiscount) {
+    actions.push({
+      action: 'setOrderTotalTax',
+      externalTotalGross: {
+        currencyCode: order?.totalPrice?.currencyCode,
+        centAmount: order?.totalPrice?.centAmount + totalTax,
+      },
+    });
+  }
 
   return actions;
 }

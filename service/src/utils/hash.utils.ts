@@ -70,6 +70,15 @@ export function hashCart(cart: Cart) {
       price: cart?.shippingInfo?.price,
       includedInPrice: cart?.shippingInfo?.taxRate?.includedInPrice,
     },
+    /*
+    An order-level discount changes NO line item's `totalPrice` -- that is what
+    distinguishes a `totalPrice` cart discount from every other target -- so
+    without this the hash is identical before and after one is applied, the
+    extension short-circuits, and the cart keeps whichever tax mode it already
+    had. `postProcessing` picks the mode from this field, so it has to be able to
+    see it change.
+    */
+    discountOnTotalPrice: cart?.discountOnTotalPrice?.discountedAmount,
   };
   return hashInvariantObject(data);
 }
