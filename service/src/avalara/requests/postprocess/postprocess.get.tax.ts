@@ -9,8 +9,29 @@ export function postProcessing(
 ): Array<UpdateAction> {
   const actions = [];
 
-  if (cart?.taxMode !== 'ExternalAmount') {
-    actions.push({ action: 'changeTaxMode', taxMode: 'ExternalAmount' });
+  /*
+  `External`, not `ExternalAmount`.
+
+  In `ExternalAmount` commercetools stores the gross figures we hand it and does
+  no tax arithmetic of its own, so it emits no `taxedPrice.taxPortions`. A cart
+  discount targeting `totalPrice` then has nothing to be apportioned across, and
+  commercetools deducts it from the cart gross TWICE -- once inside
+  `cart.totalPrice`, and again as `discountOnTotalPrice.discountedGrossAmount`.
+  The cart's gross lands below its net, `totalTax` goes negative, and the shopper
+  is charged roughly the whole tax short. `setCartTotalTax` cannot correct it:
+  commercetools discards `externalTotalGross` entirely whenever
+  `discountOnTotalPrice` is present (verified against a live project -- a probe
+  value of 99999 was honoured on an undiscounted cart and ignored on a discounted
+  one).
+
+  In `External` we supply the RATE and commercetools computes the amounts. It
+  then emits tax portions, apportions the discount correctly, and every cart
+  discount target works. The trade-off is that commercetools recalculates from
+  the rate using the cart's `taxRoundingMode` rather than storing AvaTax's exact
+  amount, so a figure can differ from the AvaTax quote by a cent.
+  */
+  if (cart?.taxMode !== 'External') {
+    actions.push({ action: 'changeTaxMode', taxMode: 'External' });
   }
 
   const rate = (
@@ -42,8 +63,6 @@ export function postProcessing(
     return rate;
   };
 
-  let totalTax = 0;
-
   const lines = taxResponse?.lines;
 
   for (const item of cart?.lineItems || []) {
@@ -53,21 +72,13 @@ export function postProcessing(
 
     const taxCentAmount = (avalaraLineItem?.tax as number) * 100;
 
-    totalTax += taxCentAmount;
-
     actions.push({
-      action: 'setLineItemTaxAmount',
+      action: 'setLineItemTaxRate',
       lineItemId: item.id,
-      externalTaxAmount: {
-        totalGross: {
-          currencyCode: cart?.totalPrice?.currencyCode,
-          centAmount: item?.totalPrice?.centAmount + taxCentAmount,
-        },
-        taxRate: {
-          name: 'avaTaxRate',
-          amount: taxCentAmount ? rate(avalaraLineItem?.details) : 0,
-          country: cart?.country || cart?.shippingAddress?.country,
-        },
+      externalTaxRate: {
+        name: 'avaTaxRate',
+        amount: taxCentAmount ? rate(avalaraLineItem?.details) : 0,
+        country: cart?.country || cart?.shippingAddress?.country,
       },
     });
   }
@@ -76,21 +87,13 @@ export function postProcessing(
     const avalaraLineItem = lines?.find((x) => x.itemCode === item?.key);
     const taxCentAmount = (avalaraLineItem?.tax as number) * 100;
 
-    totalTax += taxCentAmount;
-
     actions.push({
-      action: 'setCustomLineItemTaxAmount',
+      action: 'setCustomLineItemTaxRate',
       customLineItemId: item.id,
-      externalTaxAmount: {
-        totalGross: {
-          currencyCode: cart?.totalPrice?.currencyCode,
-          centAmount: item?.totalPrice?.centAmount + taxCentAmount,
-        },
-        taxRate: {
-          name: 'avaTaxRate',
-          amount: taxCentAmount ? rate(avalaraLineItem?.details) : 0,
-          country: cart?.country || cart?.shippingAddress?.country,
-        },
+      externalTaxRate: {
+        name: 'avaTaxRate',
+        amount: taxCentAmount ? rate(avalaraLineItem?.details) : 0,
+        country: cart?.country || cart?.shippingAddress?.country,
       },
     });
   }
@@ -98,34 +101,22 @@ export function postProcessing(
   const avalaraShippingLine = lines?.find((x) => x.itemCode === 'Shipping');
   const shipTaxCentAmount = (avalaraShippingLine?.tax as number) * 100;
 
-  const shipPrice =
-    cart?.shippingInfo?.discountedPrice?.value?.centAmount ??
-    (cart?.shippingInfo?.price?.centAmount as number);
-  totalTax += shipTaxCentAmount;
-
   actions.push({
-    action: 'setShippingMethodTaxAmount',
+    action: 'setShippingMethodTaxRate',
     shippingKey: cart?.shippingKey,
-    externalTaxAmount: {
-      totalGross: {
-        centAmount: shipPrice + shipTaxCentAmount,
-        currencyCode: cart?.totalPrice?.currencyCode,
-      },
-      taxRate: {
-        name: 'avaTaxRate',
-        amount: shipTaxCentAmount ? rate(avalaraShippingLine?.details) : 0,
-        country: cart?.country || cart?.shippingAddress?.country,
-      },
+    externalTaxRate: {
+      name: 'avaTaxRate',
+      amount: shipTaxCentAmount ? rate(avalaraShippingLine?.details) : 0,
+      country: cart?.country || cart?.shippingAddress?.country,
     },
   });
 
-  actions.push({
-    action: 'setCartTotalTax',
-    externalTotalGross: {
-      currencyCode: cart?.totalPrice?.currencyCode,
-      centAmount: cart?.totalPrice?.centAmount + totalTax, // minus total cart discount gross
-    },
-  });
+  /*
+  No `setCartTotalTax`. It is only valid in `ExternalAmount`, and it was the line
+  that carried the unfinished `// minus total cart discount gross` note. In
+  `External` commercetools derives the cart total from the line rates itself, so
+  there is nothing to state and nothing left to get wrong.
+  */
 
   if (!cart?.custom?.type) {
     actions.push({

@@ -50,34 +50,21 @@ describe('order.edit.helpers', () => {
       );
 
       expect(mockCreateOrderEdit).toHaveBeenCalledWith('123', [
-        { action: 'changeTaxMode', taxMode: 'ExternalAmount' },
+        { action: 'changeTaxMode', taxMode: 'External' },
         {
-          action: 'setLineItemTaxAmount',
-          externalTaxAmount: {
-            taxRate: { amount: 0, country: 'US', name: 'avaTaxRate' },
-            totalGross: { centAmount: 13300, currencyCode: 'USD' },
-          },
+          action: 'setLineItemTaxRate',
+          externalTaxRate: { amount: 0, country: 'US', name: 'avaTaxRate' },
           lineItemId: '123',
         },
         {
-          action: 'setCustomLineItemTaxAmount',
+          action: 'setCustomLineItemTaxRate',
           customLineItemId: '641649e5-2337-4871-90ab-164fd3e919b3',
-          externalTaxAmount: {
-            taxRate: { amount: 0, country: 'US', name: 'avaTaxRate' },
-            totalGross: { centAmount: 5200, currencyCode: 'USD' },
-          },
+          externalTaxRate: { amount: 0, country: 'US', name: 'avaTaxRate' },
         },
         {
-          action: 'setShippingMethodTaxAmount',
-          externalTaxAmount: {
-            taxRate: { amount: 0, country: 'US', name: 'avaTaxRate' },
-            totalGross: { centAmount: 1123, currencyCode: 'USD' },
-          },
+          action: 'setShippingMethodTaxRate',
+          externalTaxRate: { amount: 0, country: 'US', name: 'avaTaxRate' },
           shippingKey: undefined,
-        },
-        {
-          action: 'setOrderTotalTax',
-          externalTotalGross: { centAmount: 27600, currencyCode: 'USD' },
         },
       ]);
       expect(mockApplyOrderEdit).toHaveBeenCalledWith(orderEdit);
@@ -104,62 +91,40 @@ describe('order.edit.helpers', () => {
         orderToBeEdited
       );
 
+      // Rates, not amounts, and no `setOrderTotalTax`: the order runs in
+      // `External` tax mode so commercetools computes the totals and can
+      // apportion an order-level discount. See `order.edit.helpers.ts`.
       expect(actions).toEqual([
         {
           action: 'changeTaxMode',
-          taxMode: 'ExternalAmount',
+          taxMode: 'External',
         },
         {
-          action: 'setLineItemTaxAmount',
-          externalTaxAmount: {
-            taxRate: {
-              amount: 0,
-              country: 'US',
-              name: 'avaTaxRate',
-            },
-            totalGross: {
-              centAmount: 13300,
-              currencyCode: 'USD',
-            },
+          action: 'setLineItemTaxRate',
+          externalTaxRate: {
+            amount: 0,
+            country: 'US',
+            name: 'avaTaxRate',
           },
           lineItemId: '123',
         },
         {
-          action: 'setCustomLineItemTaxAmount',
+          action: 'setCustomLineItemTaxRate',
           customLineItemId: '641649e5-2337-4871-90ab-164fd3e919b3',
-          externalTaxAmount: {
-            taxRate: {
-              amount: 0,
-              country: 'US',
-              name: 'avaTaxRate',
-            },
-            totalGross: {
-              centAmount: 5200,
-              currencyCode: 'USD',
-            },
+          externalTaxRate: {
+            amount: 0,
+            country: 'US',
+            name: 'avaTaxRate',
           },
         },
         {
-          action: 'setShippingMethodTaxAmount',
-          externalTaxAmount: {
-            taxRate: {
-              amount: 0,
-              country: 'US',
-              name: 'avaTaxRate',
-            },
-            totalGross: {
-              centAmount: 1123,
-              currencyCode: 'USD',
-            },
+          action: 'setShippingMethodTaxRate',
+          externalTaxRate: {
+            amount: 0,
+            country: 'US',
+            name: 'avaTaxRate',
           },
           shippingKey: undefined,
-        },
-        {
-          action: 'setOrderTotalTax',
-          externalTotalGross: {
-            centAmount: 27600,
-            currencyCode: 'USD',
-          },
         },
       ]);
     });

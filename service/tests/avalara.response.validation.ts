@@ -40,42 +40,30 @@ export const expectAvaTaxReturn = (taxResponse: TransactionModel) => {
   ).toBeDefined();
 };
 
+// Rates, not amounts: the connector runs the cart in `External` tax mode so
+// commercetools computes the tax itself and can apportion a `totalPrice` cart
+// discount. See the note in `postprocess.get.tax.ts`. There is deliberately no
+// `setCartTotalTax` -- that action only exists in `ExternalAmount`.
 export const actions = {
   actions: [
-    { action: 'changeTaxMode', taxMode: 'ExternalAmount' },
+    { action: 'changeTaxMode', taxMode: 'External' },
     {
-      action: 'setLineItemTaxAmount',
+      action: 'setLineItemTaxRate',
       lineItemId: 'id123',
-      externalTaxAmount: {
-        totalGross: { currencyCode: 'USD', centAmount: 70249 },
-        taxRate: { name: 'avaTaxRate', amount: 0.0725, country: 'US' },
-      },
+      externalTaxRate: { name: 'avaTaxRate', amount: 0.0725, country: 'US' },
     },
     {
-      action: 'setCustomLineItemTaxAmount',
+      action: 'setCustomLineItemTaxRate',
       customLineItemId: '641649e5-2337-4871-90ab-164fd3e919b3',
-      externalTaxAmount: {
-        totalGross: {
-          currencyCode: 'USD',
-          centAmount: 4505,
-        },
-        taxRate: {
-          name: 'avaTaxRate',
-          amount: 0.0725,
-          country: 'US',
-        },
+      externalTaxRate: {
+        name: 'avaTaxRate',
+        amount: 0.0725,
+        country: 'US',
       },
     },
     {
-      action: 'setShippingMethodTaxAmount',
-      externalTaxAmount: {
-        totalGross: { centAmount: 1073, currencyCode: 'USD' },
-        taxRate: { name: 'avaTaxRate', amount: 0.0725, country: 'US' },
-      },
-    },
-    {
-      action: 'setCartTotalTax',
-      externalTotalGross: { currencyCode: 'USD', centAmount: 71627 },
+      action: 'setShippingMethodTaxRate',
+      externalTaxRate: { name: 'avaTaxRate', amount: 0.0725, country: 'US' },
     },
     {
       action: 'setCustomField',
